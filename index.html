@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TenderEvaluation AI</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Marked for Markdown Parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- File Parsing Libraries -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+    <!-- html2pdf for PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f3f4f6; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+        .markdown-body th, .markdown-body td { border: 1px solid #e5e7eb; padding: 0.5rem; text-align: left; }
+        .markdown-body th { background-color: #f9fafb; font-weight: 600; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5em; margin: 0.5em 0; }
+        .markdown-body ol { list-style-type: decimal; padding-left: 1.5em; margin: 0.5em 0; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: 700; margin-top: 1em; margin-bottom: 0.5em; }
+        .markdown-body p { margin-bottom: 0.8em; }
+        
+        /* Style for citations */
+        sup { 
+            color: #2563eb; 
+            font-weight: bold; 
+            cursor: help; 
+            background-color: #eff6ff;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #e5e7eb; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        /* --- PDF Specific Styles --- */
+        .html2pdf__page-break { 
+            page-break-before: always; 
+            margin-top: 0; 
+            padding-top: 20px; 
+            display: block; 
+        }
+        
+        .break-inside-avoid { 
+            page-break-inside: avoid; 
+            break-inside: avoid;
+        }
+        
+        tr { page-break-inside: avoid; break-inside: avoid; }
+
+        #pdf-print-container {
+            width: 297mm; /* A4 Landscape width */
+            background-color: white;
+            padding: 15mm;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #000;
+            font-family: Arial, sans-serif;
+        }
+        
+        #pdf-print-container h1 { font-size: 22px; color: #1e3a8a; margin-bottom: 5px; }
+        #pdf-print-container h2 { font-size: 16px; border-bottom: 2px solid #1e3a8a; padding-bottom: 5px; margin-bottom: 15px; margin-top: 20px; color: #1e3a8a; }
+        #pdf-print-container h3 { font-size: 14px; margin-bottom: 8px; color: #111; font-weight: bold; }
+        
+        #pdf-print-container table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-bottom: 15px;
+        }
+        #pdf-print-container th { 
+            background-color: #1e3a8a; /* Blue header for print */
+            color: white;
+            font-weight: bold;
+            text-align: left;
+        }
+        #pdf-print-container th, #pdf-print-container td { 
+            border: 1px solid #ccc; 
+            padding: 8px; 
+            vertical-align: middle;
+        }
+        #pdf-print-container tr:nth-child(even) {
+            background-color: #f3f4f6; /* Zebra striping for print */
+        }
+        #pdf-print-container .badge { 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-weight: bold; 
+            display: inline-block;
+            font-size: 10px;
+        }
+
+        /* Floating Tooltip */
+        .floating-tooltip {
+            position: fixed;
+            background: #1e293b;
+            color: white;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            z-index: 9999;
+            pointer-events: none;
+            max-width: 250px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transform: translate(-50%, -100%);
+            margin-top: -10px;
+        }
+        .floating-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #1e293b transparent transparent transparent;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Inline Icons ---
+        const IconBase = ({ children, size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                {children}
+            </svg>
+        );
+
+        const Activity = (props) => <IconBase {...props}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></IconBase>;
+        const BarChart3 = (props) => <IconBase {...props}><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></IconBase>;
+        const FileText = (props) => <IconBase {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></IconBase>;
+        const FileDown = (props) => <IconBase {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></IconBase>;
+        const Folder = (props) => <IconBase {...props}><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></IconBase>;
+        const MessageSquare = (props) => <IconBase {...props}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></IconBase>;
+        const Plus = (props) => <IconBase {...props}><path d="M5 12h14"/><path d="M12 5v14"/></IconBase>;
+        const Search = (props) => <IconBase {...props}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></IconBase>;
+        const Send = (props) => <IconBase {...props}><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></IconBase>;
+        const Settings = (props) => <IconBase {...props}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></IconBase>;
+        const Trash2 = (props) => <IconBase {...props}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></IconBase>;
+        const Upload = (props) => <IconBase {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></IconBase>;
+        const Key = (props) => <IconBase {...props}><path d="m21 2-2 2m-7.6 7.6a6.5 6.5 0 1 1 5.3-5.3L21 9l-3 3-3-3-2.3 2.3Z"/></IconBase>;
+        const X = (props) => <IconBase {...props}><path d="M18 6 6 18"/><path d="m6 6 18 18"/></IconBase>;
+        const Maximize = (props) => <IconBase {...props}><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></IconBase>;
+        const Minimize = (props) => <IconBase {...props}><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" x2="21" y1="10" y2="3"/><line x1="3" x2="10" y1="21" y2="14"/></IconBase>;
+        const Download = (props) => <IconBase {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></IconBase>;
+        const Book = (props) => <IconBase {...props}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></IconBase>;
+
+        // --- Helper: Markdown Renderer with Citation Injection ---
+        const MarkdownRenderer = ({ content, resourceMap = [] }) => {
+            let html = marked.parse(content || '');
+            
+            // Post-process HTML to inject tooltips into citations
+            if (resourceMap.length > 0) {
+                // Regex to find <sup>[ID]</sup>
+                html = html.replace(/<sup>\[(\d+)\]<\/sup>/g, (match, id) => {
+                    const resource = resourceMap.find(r => r.id == id);
+                    const title = resource ? resource.name.replace(/"/g, '&quot;') : 'Source not found';
+                    return `<sup title="${title}">[${id}]</sup>`;
+                });
+            }
+            
+            return <div className="markdown-body text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: html }} />;
+        };
+
+        // --- Helper: Fetch with Retry (Exponential Backoff) ---
+        const fetchWithRetry = async (url, options, retries = 5, delay = 1000) => {
+            for (let i = 0; i <= retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.status === 429 || response.status === 503) {
+                        if (i === retries) return response; 
+                        const waitTime = delay * Math.pow(2, i);
+                        console.log(`API Busy (Status ${response.status}). Retrying in ${waitTime/1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, waitTime));
+                        continue;
+                    }
+                    if (response.status === 400 || response.status === 403) return response;
+                    return response;
+                } catch (error) {
+                    if (i === retries) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+                }
+            }
+        };
+
+        // --- Helper: Robust JSON Extraction ---
+        const extractJSON = (text) => {
+            try { return JSON.parse(text); } 
+            catch (e) {
+                const startIndex = text.indexOf('{');
+                const endIndex = text.lastIndexOf('}');
+                if (startIndex !== -1 && endIndex !== -1) {
+                    const jsonString = text.substring(startIndex, endIndex + 1);
+                    try { return JSON.parse(jsonString); } 
+                    catch (e2) {
+                        const clean = jsonString.replace(/```json/gi, '').replace(/```/g, '');
+                        try { return JSON.parse(clean); } 
+                        catch (e3) { console.error("JSON Parse Error (Inner):", e3); }
+                    }
+                }
+                throw new Error("Could not extract valid JSON from response.");
+            }
+        };
+
+        // --- Helper: File Parser ---
+        const readFileContent = async (file) => {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                const extension = file.name.split('.').pop().toLowerCase();
+                reader.onload = async (e) => {
+                    try {
+                        let content = "";
+                        if (['txt', 'md', 'csv'].includes(extension)) {
+                            content = e.target.result;
+                        } else if (['xlsx', 'xls'].includes(extension)) {
+                            if (window.XLSX) {
+                                const workbook = XLSX.read(e.target.result, { type: 'binary' });
+                                workbook.SheetNames.forEach(sheetName => {
+                                    const row = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+                                    content += `Sheet: ${sheetName}\n${row}\n`;
+                                });
+                            } else { content = "[XLSX Library Missing]"; }
+                        } else if (extension === 'docx') {
+                            if (window.mammoth) {
+                                const result = await mammoth.extractRawText({ arrayBuffer: e.target.result });
+                                content = result.value;
+                            } else { content = "[Mammoth Library Missing]"; }
+                        } else { content = `[File: ${file.name} - Binary content not displayed]`; }
+                        resolve({ name: file.name, content });
+                    } catch (err) {
+                        console.error("Error parsing file", err);
+                        resolve({ name: file.name, content: "[Error parsing file]" });
+                    }
+                };
+                if (['xlsx', 'xls'].includes(extension)) reader.readAsBinaryString(file);
+                else if (['docx', 'ppt', 'pptx'].includes(extension)) reader.readAsArrayBuffer(file);
+                else reader.readAsText(file);
+            });
+        };
+
+        // --- API Key Modal Component ---
+        const ApiKeyModal = ({ isOpen, onSave }) => {
+            const [inputKey, setInputKey] = useState("");
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md">
+                        <div className="flex items-center gap-2 mb-4 text-blue-600">
+                            <Key size={24} />
+                            <h2 className="text-xl font-bold">Configure API Key</h2>
+                        </div>
+                        <p className="text-gray-600 mb-4 text-sm">
+                            To use TenderEval AI, please enter your Google Gemini API Key. 
+                            It will be saved locally in your browser.
+                        </p>
+                        <input
+                            type="password"
+                            value={inputKey}
+                            onChange={(e) => setInputKey(e.target.value)}
+                            placeholder="Enter AIzaSy..."
+                            className="w-full border border-gray-300 rounded p-2 mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                        <button
+                            onClick={() => onSave(inputKey)}
+                            disabled={!inputKey.trim()}
+                            className="w-full bg-blue-600 text-white py-2 rounded font-semibold hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            Save & Start
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Chat Widget Component ---
+        const ChatWidget = ({ isOpen, toggleChat, messages, onSendMessage, isChatting, customQuestion, setCustomQuestion, analysisData, resourceMap }) => {
+            const chatEndRef = useRef(null);
+            const [isMaximized, setIsMaximized] = useState(false);
+
+            useEffect(() => {
+                if (isOpen) chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            }, [messages, isOpen, isMaximized]);
+
+            // Save Chat to TXT format
+            const handleSaveTxt = () => {
+                if (messages.length === 0) return;
+                
+                const textContent = messages.map(msg => {
+                    const role = msg.role === 'user' ? 'YOU' : 'ASSISTANT';
+                    const cleanText = msg.text.replace(/\*\*/g, '').replace(/###/g, ''); 
+                    return `[${role}]:\n${cleanText}\n----------------------------------------\n`;
+                }).join('\n');
+
+                const blob = new Blob([textContent], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Evaluation_Chat_History.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            const toggleMaximize = (e) => {
+                e.stopPropagation();
+                setIsMaximized(!isMaximized);
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault(); 
+                    if (!isChatting) onSendMessage();
+                }
+            }
+
+            return (
+                <div className="fixed bottom-6 left-6 z-40 flex flex-col items-start gap-4">
+                    {isOpen && (
+                        <div className={`bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden transition-all duration-300 ease-in-out mb-2 ${isMaximized ? "w-[600px] h-[85vh] max-w-[90vw]" : "w-80 sm:w-96 h-[60vh] max-h-[600px]"}`}>
+                            <div className="bg-slate-900 text-white p-3 flex justify-between items-center shrink-0">
+                                <div className="flex items-center gap-2 font-semibold text-sm">
+                                    <MessageSquare size={16} className="text-blue-400" />
+                                    Evaluation Assistant
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={handleSaveTxt} title="Save Chat to TXT" className="hover:text-blue-300 transition p-1">
+                                        <FileText size={16} />
+                                    </button>
+                                    <button onClick={toggleMaximize} title={isMaximized ? "Minimize" : "Maximize"} className="hover:text-blue-300 transition p-1">
+                                        {isMaximized ? <Minimize size={16} /> : <Maximize size={16} />}
+                                    </button>
+                                    <button onClick={toggleChat} title="Close" className="hover:text-red-400 transition p-1"><X size={16} /></button>
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 custom-scrollbar">
+                                {messages.length === 0 && <p className="text-center text-xs text-gray-400 mt-4 italic">Hi! I can help you investigate the tender details.</p>}
+                                {messages.map((msg, index) => (
+                                    <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-3`}>
+                                        <div className={`max-w-[85%] rounded-lg p-2.5 text-xs shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white text-slate-800 border border-gray-200'}`}>
+                                            <MarkdownRenderer content={msg.text} resourceMap={resourceMap} />
+                                        </div>
+                                    </div>
+                                ))}
+                                {isChatting && <div className="flex justify-start"><div className="bg-white text-slate-500 border border-gray-200 rounded-lg p-2 text-xs italic animate-pulse">AI is thinking...</div></div>}
+                                <div ref={chatEndRef} />
+                            </div>
+                            <div className="p-3 bg-white border-t border-gray-100 shrink-0">
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={customQuestion} 
+                                        onChange={(e) => setCustomQuestion(e.target.value)} 
+                                        onKeyDown={handleKeyDown} 
+                                        placeholder={analysisData ? "Ask about score..." : "Wait for analysis..."} 
+                                        className="flex-1 border border-gray-300 rounded-full px-3 py-2 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition" 
+                                    />
+                                    <button onClick={onSendMessage} disabled={!customQuestion.trim() || isChatting} className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 disabled:opacity-50 transition shadow-md flex items-center justify-center w-8 h-8"><Send size={14} /></button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <button onClick={toggleChat} className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95 flex items-center justify-center group relative">
+                        <MessageSquare size={24} />
+                        {!isOpen && messages.length === 0 && <span className="absolute left-full ml-3 bg-slate-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">Ask AI Assistant</span>}
+                    </button>
+                </div>
+            );
+        };
+
+        // --- App Component ---
+        const App = () => {
+            const DEFAULT_KEY = "";
+            const [apiKey, setApiKey] = useState("");
+            const [showKeyModal, setShowKeyModal] = useState(false);
+            const [tenders, setTenders] = useState([]);
+            const [userDocs, setUserDocs] = useState([]);
+            const [customQuestion, setCustomQuestion] = useState("");
+            const [messages, setMessages] = useState([]);
+            const [analysisData, setAnalysisData] = useState(null);
+            const [isAnalyzing, setIsAnalyzing] = useState(false);
+            const [isChatting, setIsChatting] = useState(false);
+            const [activeTab, setActiveTab] = useState('executive');
+            const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+            const [tooltip, setTooltip] = useState({ show: false, text: '', x: 0, y: 0 });
+            const [isChatOpen, setIsChatOpen] = useState(false);
+            const [resourceMap, setResourceMap] = useState([]); // Store file IDs
+            const printRef = useRef(null); 
+
+            useEffect(() => {
+                const storedKey = localStorage.getItem("gemini_api_key");
+                setApiKey(storedKey || DEFAULT_KEY);
+                if (!storedKey) setShowKeyModal(true);
+            }, []);
+
+            const handleSaveKey = (key) => {
+                localStorage.setItem("gemini_api_key", key);
+                setApiKey(key);
+                setShowKeyModal(false);
+            };
+
+            const handleHeaderEnter = (e, text) => {
+                const rect = e.target.getBoundingClientRect();
+                setTooltip({ show: true, text: text, x: rect.left + (rect.width / 2), y: rect.top });
+            };
+            const handleHeaderLeave = () => setTooltip({ ...tooltip, show: false });
+
+            const addTender = () => {
+                if (tenders.length >= 20) return alert("Maximum 20 tenders allowed.");
+                setTenders([...tenders, { id: Date.now(), name: `Tenderer ${tenders.length + 1}`, files: [] }]);
+            };
+            const removeTender = (id) => setTenders(tenders.filter(t => t.id !== id));
+            const handleTenderFiles = async (id, e) => {
+                const files = Array.from(e.target.files);
+                let folderName = null;
+                if (files.length > 0 && files[0].webkitRelativePath) folderName = files[0].webkitRelativePath.split('/')[0];
+                const fileDataPromises = files.map(file => readFileContent(file));
+                const processedFiles = await Promise.all(fileDataPromises);
+                setTenders(prev => prev.map(t => t.id === id ? { ...t, name: folderName || t.name, files: [...t.files, ...processedFiles] } : t));
+            };
+            const handleUserDocs = async (e) => {
+                const processedFiles = await Promise.all(Array.from(e.target.files).map(readFileContent));
+                setUserDocs([...userDocs, ...processedFiles]);
+            };
+            const updateTenderName = (id, name) => setTenders(tenders.map(t => t.id === id ? { ...t, name } : t));
+
+            // --- Report PDF Generation Logic ---
+            useEffect(() => {
+                if (isGeneratingPdf && analysisData && printRef.current) {
+                    const element = printRef.current;
+                    const opt = {
+                        margin: [5, 5, 5, 5],
+                        filename: 'Tender_Evaluation_Report.pdf',
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+                        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+                    };
+                    if (window.html2pdf) {
+                        window.html2pdf().set(opt).from(element).save().then(() => setIsGeneratingPdf(false))
+                        .catch(err => { console.error("PDF Fail", err); setIsGeneratingPdf(false); });
+                    } else { alert("PDF library not loaded."); setIsGeneratingPdf(false); }
+                }
+            }, [isGeneratingPdf, analysisData]);
+
+            const triggerPdfGeneration = () => { if (analysisData) setIsGeneratingPdf(true); };
+
+            const runAnalysis = async () => {
+                if (tenders.length === 0) return alert("Please add at least one tender.");
+                if (!apiKey) { setShowKeyModal(true); return; }
+                setIsAnalyzing(true);
+
+                // Index files
+                let idx = 1;
+                const resources = [];
+                userDocs.forEach(d => resources.push({ id: idx++, name: `UserDoc: ${d.name}`, content: d.content }));
+                tenders.forEach(t => t.files.forEach(f => resources.push({ id: idx++, name: `Tenderer: ${t.name} - ${f.name}`, content: f.content })));
+                setResourceMap(resources);
+
+                let context = `You are an expert Construction Tender Evaluator.
+                
+                DOCUMENTS WITH IDs (Use these IDs for citations like <sup>[1]</sup>):
+                ${resources.map(r => `[${r.id}] ${r.name}:\n${r.content.substring(0, 3000)}...`).join('\n\n')}
+                
+                NOTES: ${customQuestion}
+                
+                TASK:
+                1. Review tender returns against "RFT individual Evaluation form" (B1, B2, C, D) & "Works Requirements". Score 0-10.
+                2. IMPORTANT: When you cite a document, strictly use the format <sup>[ID]</sup> (e.g. <sup>[1]</sup>, <sup>[5]</sup>).
+                3. Provide detailed Pros/Cons.
+
+                OUTPUT JSON:
+                { 
+                    "executiveSummary": [ { "tenderer": "Name", "scoreB1": 0, "scoreB2": 0, "scoreC": 0, "scoreD": 0, "totalScore": 0, "rank": 0, "keyStrength": "", "keyWeakness": "" } ], 
+                    "detailedEvaluations": [ { "tenderer": "Name", "criteria": [ { "id": "B1", "title": "...", "score": 0, "pros": ["..."], "cons": ["..."], "analysis": "markdown text with <sup>[id]</sup> citations" } ] } ] 
+                }`;
+
+                try {
+                    const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: context }] }], generationConfig: { responseMimeType: "application/json" } })
+                    });
+                    if (!response.ok) {
+                        if (response.status === 400) { setShowKeyModal(true); throw new Error("API Key Invalid"); }
+                        throw new Error(`API Error: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    if (!data.candidates) throw new Error("No candidates returned");
+                    setAnalysisData(extractJSON(data.candidates[0].content.parts[0].text));
+                    setIsChatOpen(true);
+                } catch (error) { alert(`Analysis failed: ${error.message}`); } finally { setIsAnalyzing(false); }
+            };
+
+            const sendMessage = async () => {
+                if (isChatting) return;
+                if (!customQuestion.trim() || !apiKey) return;
+                
+                const userMsg = customQuestion;
+                setCustomQuestion("");
+                setIsChatting(true);
+                const newMessages = [...messages, { role: 'user', text: userMsg }];
+                setMessages(newMessages);
+
+                const chatPrompt = `You are a Tender Evaluation Assistant.
+                STRICT RULE: ONLY answer questions relevant to the tender evaluation, data, scores, or docs.
+                
+                CONTEXT DATA: ${JSON.stringify(analysisData)}
+                DOCUMENT MAP: ${JSON.stringify(resourceMap.map(r => ({id: r.id, name: r.name})))}
+                
+                USER QUESTION: ${userMsg}.
+                
+                Answer in Markdown. Use <sup>[ID]</sup> citations if referring to documents.`;
+
+                try {
+                     const response = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: chatPrompt }] }] })
+                    });
+                    if (!response.ok) throw new Error("API Request Failed");
+                    const data = await response.json();
+                    setMessages([...newMessages, { role: 'bot', text: data.candidates[0].content.parts[0].text }]);
+                } catch (error) { setMessages([...newMessages, { role: 'bot', text: "Error connecting to server." }]); } finally { setIsChatting(false); }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col font-sans text-slate-800">
+                    <ApiKeyModal isOpen={showKeyModal} onSave={handleSaveKey} />
+                    {tooltip.show && <div className="floating-tooltip animate-fade-in" style={{ top: tooltip.y, left: tooltip.x }}>{tooltip.text}</div>}
+                    <header className="bg-slate-900 text-white p-4 shadow-lg flex items-center justify-between z-20">
+                        <div className="flex items-center gap-3"><Activity className="text-blue-400" /><h1 className="text-xl font-bold tracking-tight">TenderEval AI</h1></div>
+                        <div className="flex items-center gap-4"><button onClick={() => setShowKeyModal(true)} className="text-xs text-slate-400 hover:text-white flex items-center gap-1"><Key size={12}/> {apiKey && apiKey !== DEFAULT_KEY ? "API Key Configured" : "Configure API Key"}</button></div>
+                    </header>
+                    <main className="flex-1 flex overflow-hidden">
+                        <aside className="w-80 bg-white border-r border-gray-200 overflow-y-auto p-5 flex-shrink-0 z-10 shadow-sm">
+                            <h2 className="font-bold mb-6 text-slate-800 flex items-center gap-2 uppercase text-xs tracking-wider"><Settings size={14} /> Configuration</h2>
+                            <div className="mb-8">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-3">User Documents</label>
+                                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-blue-50 hover:border-blue-400 transition cursor-pointer relative group">
+                                    <input type="file" multiple onChange={handleUserDocs} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                    <Upload className="mx-auto text-gray-400 group-hover:text-blue-500 mb-2 transition" size={24} />
+                                    <span className="text-xs text-gray-500 group-hover:text-blue-600 font-medium">Upload Requirements</span>
+                                </div>
+                                <ul className="mt-3 space-y-2">{userDocs.map((file, i) => (<li key={i} className="text-xs text-slate-600 flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-100"><FileText size={12} className="text-blue-500 shrink-0" /> <span className="truncate">{file.name}</span></li>))}</ul>
+                            </div>
+                            <hr className="my-6 border-gray-100" />
+                            <div className="mb-6">
+                                <div className="flex justify-between items-center mb-3"><label className="text-xs font-bold text-gray-500 uppercase">Tenderers</label><button onClick={addTender} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded-full transition"><Plus size={16} /></button></div>
+                                <div className="space-y-3">{tenders.map(tender => (<div key={tender.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200 shadow-sm group hover:border-blue-300 transition"><div className="flex justify-between items-center mb-2"><input value={tender.name} onChange={(e) => updateTenderName(tender.id, e.target.value)} className="bg-transparent text-sm font-bold w-full focus:outline-none focus:text-blue-700 text-slate-700" /><button onClick={() => removeTender(tender.id)} className="text-gray-400 hover:text-red-500 transition opacity-0 group-hover:opacity-100"><Trash2 size={14} /></button></div><div className="relative"><label className="flex items-center gap-2 text-xs text-blue-600 cursor-pointer hover:underline font-medium"><Folder size={12} /> Select Folder<input type="file" multiple webkitdirectory="true" directory="" onChange={(e) => handleTenderFiles(tender.id, e)} className="hidden" /></label><div className="text-[10px] text-gray-400 mt-1 pl-5">{tender.files.length} files loaded</div></div></div>))}</div>
+                            </div>
+                            <button onClick={runAnalysis} disabled={isAnalyzing || tenders.length === 0} className={`w-full py-3 rounded-lg text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 ${isAnalyzing ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg transform active:scale-95'}`}>{isAnalyzing ? 'Processing...' : <> <Search size={16} /> Run Evaluation </>}</button>
+                        </aside>
+                        <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+                            <div className="flex-1 overflow-y-auto bg-gray-200 p-8 custom-scrollbar relative">
+                                {!analysisData && !isAnalyzing && <div className="h-full flex flex-col items-center justify-center text-gray-400"><BarChart3 size={64} className="mb-4 opacity-30" /><p className="font-medium">Ready to Evaluate</p><p className="text-sm opacity-70">Configure tenderers and upload docs to begin.</p></div>}
+                                {isAnalyzing && <div className="h-full flex flex-col items-center justify-center text-blue-600"><Activity size={48} className="mb-4 animate-bounce" /><p className="font-bold text-lg">AI Evaluation in Progress</p><p className="text-sm text-gray-500 mt-2">Analyzing criteria B1, B2, C & D across {tenders.length} tenderers...</p></div>}
+                                {analysisData && (
+                                    <div className="space-y-8 pb-24">
+                                        <div className="flex justify-end sticky top-0 z-30 pt-2 pb-4 pointer-events-none"><button onClick={triggerPdfGeneration} className="pointer-events-auto bg-slate-800 text-white hover:bg-slate-900 px-4 py-2 rounded shadow-lg flex items-center gap-2 text-sm font-medium transition hover:-translate-y-1">{isGeneratingPdf ? "Generating..." : <><FileDown size={16} /> Save Full Report (PDF)</>}</button></div>
+                                        <div className="landscape-paper mx-auto">
+                                            <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-3 border-b pb-4"><BarChart3 className="text-blue-600" /> Executive Summary</h2>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm text-left text-gray-700">
+                                                    <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-200">
+                                                        <tr>
+                                                            <th className="px-4 py-3 bg-blue-900 text-white">Rank</th><th className="px-4 py-3 bg-blue-900 text-white">Tenderer</th>
+                                                            <th className="px-4 py-3 bg-blue-900 text-white cursor-help hover:bg-blue-800" onMouseEnter={(e) => handleHeaderEnter(e, "Criterion B1: Technical Merit & Quality Assurance")} onMouseLeave={handleHeaderLeave}>B1</th>
+                                                            <th className="px-4 py-3 bg-blue-900 text-white cursor-help hover:bg-blue-800" onMouseEnter={(e) => handleHeaderEnter(e, "Criterion B2: Project Team & Resources")} onMouseLeave={handleHeaderLeave}>B2</th>
+                                                            <th className="px-4 py-3 bg-blue-900 text-white cursor-help hover:bg-blue-800" onMouseEnter={(e) => handleHeaderEnter(e, "Criterion C: Works Requirements & Methodology")} onMouseLeave={handleHeaderLeave}>C</th>
+                                                            <th className="px-4 py-3 bg-blue-900 text-white cursor-help hover:bg-blue-800" onMouseEnter={(e) => handleHeaderEnter(e, "Criterion D: Programme / Schedule")} onMouseLeave={handleHeaderLeave}>D</th>
+                                                            <th className="px-4 py-3 font-bold bg-blue-900 text-white">Total</th><th className="px-4 py-3 bg-blue-900 text-white w-1/5">Key Strength</th><th className="px-4 py-3 bg-blue-900 text-white w-1/5">Key Weakness</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {analysisData.executiveSummary.sort((a,b) => b.totalScore - a.totalScore).map((row, idx) => (
+                                                            <tr key={idx} className="hover:bg-blue-50 transition-colors even:bg-slate-50">
+                                                                <td className="px-4 py-3 font-bold text-slate-400">#{idx + 1}</td><td className="px-4 py-3 font-bold text-slate-900">{row.tenderer}</td><td className="px-4 py-3">{row.scoreB1}</td><td className="px-4 py-3">{row.scoreB2}</td><td className="px-4 py-3">{row.scoreC}</td><td className="px-4 py-3">{row.scoreD}</td><td className="px-4 py-3 font-bold text-blue-600 text-base">{row.totalScore}</td><td className="px-4 py-3 text-xs text-green-700">{row.keyStrength}</td><td className="px-4 py-3 text-xs text-red-600">{row.keyWeakness}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        <div className="landscape-paper mx-auto min-h-[400px]">
+                                            <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">{analysisData.detailedEvaluations.map((evalItem, idx) => (<button key={idx} onClick={() => setActiveTab(evalItem.tenderer)} className={`px-6 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${activeTab === evalItem.tenderer ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{evalItem.tenderer}</button>))}</div>
+                                            {analysisData.detailedEvaluations.map((evalItem) => (
+                                                <div key={evalItem.tenderer} className={activeTab === evalItem.tenderer ? 'block animate-fade-in' : 'hidden'}>
+                                                    <h3 className="text-lg font-bold mb-4 text-slate-800">{evalItem.tenderer} - Detailed Breakdown</h3>
+                                                    <div className="space-y-6">{evalItem.criteria.map((crit, cIdx) => (<div key={cIdx} className="border border-gray-100 rounded-lg p-5 bg-gray-50"><div className="flex justify-between items-start mb-3"><h4 className="font-bold text-slate-700">{crit.title}</h4><span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">{crit.score}/10</span></div><div className="text-sm text-slate-600 mb-4 markdown-body"><MarkdownRenderer content={crit.analysis} resourceMap={resourceMap} /></div><div className="grid grid-cols-2 gap-6 pt-2 border-t border-gray-200"><div><h5 className="text-xs font-bold text-green-600 uppercase mb-2 tracking-wide">Pros</h5><ul className="list-disc list-inside text-xs text-slate-600 space-y-1">{crit.pros.map((p, i) => <li key={i}>{p}</li>)}</ul></div><div><h5 className="text-xs font-bold text-red-500 uppercase mb-2 tracking-wide">Cons</h5><ul className="list-disc list-inside text-xs text-slate-600 space-y-1">{crit.cons.map((c, i) => <li key={i}>{c}</li>)}</ul></div></div></div>))}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="landscape-paper mx-auto p-8">
+                                            <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2 border-b pb-2"><Book size={20} className="text-blue-600"/> References Index</h3>
+                                            <div className="grid grid-cols-1 gap-2 text-sm text-gray-600">
+                                                {resourceMap.map(r => (
+                                                    <div key={r.id} className="flex gap-2">
+                                                        <span className="font-bold text-blue-600 w-8 shrink-0">[{r.id}]</span>
+                                                        <span className="truncate" title={r.name}>{r.name}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            {isGeneratingPdf && analysisData && (
+                                <div style={{ position: 'absolute', top: 0, left: '-10000px' }}>
+                                    <div id="pdf-print-container" ref={printRef}>
+                                        <div className="break-inside-avoid mb-8">
+                                            <h1 className="text-3xl font-bold mb-2">Tender Evaluation Report</h1><p className="text-gray-500 mb-8">Generated by TenderEval AI</p>
+                                            <h2 className="text-xl font-bold mb-4 border-b pb-2">Executive Summary</h2>
+                                            <table className="w-full text-sm text-left border-collapse border border-gray-300 mb-8"><thead className="bg-gray-100"><tr><th className="border p-2">Rank</th><th className="border p-2">Tenderer</th><th className="border p-2">B1</th><th className="border p-2">B2</th><th className="border p-2">C</th><th className="border p-2">D</th><th className="border p-2">Total Score</th><th className="border p-2">Key Strength</th><th className="border p-2">Key Weakness</th></tr></thead><tbody>{analysisData.executiveSummary.sort((a,b) => b.totalScore - a.totalScore).map((row, idx) => (<tr key={idx}><td className="border p-2">#{idx + 1}</td><td className="border p-2 font-bold">{row.tenderer}</td><td className="border p-2">{row.scoreB1}</td><td className="border p-2">{row.scoreB2}</td><td className="border p-2">{row.scoreC}</td><td className="border p-2">{row.scoreD}</td><td className="border p-2 font-bold">{row.totalScore}</td><td className="border p-2 text-xs">{row.keyStrength}</td><td className="border p-2 text-xs">{row.keyWeakness}</td></tr>))}</tbody></table>
+                                        </div>
+                                        {analysisData.detailedEvaluations.map((evalItem, idx) => (
+                                            <div key={idx} className="html2pdf__page-break">
+                                                <h2 className="text-2xl font-bold mb-6 pb-2 border-b-2 border-blue-600">{evalItem.tenderer}</h2>
+                                                <div className="space-y-6">{evalItem.criteria.map((crit, cIdx) => (<div key={cIdx} className="mb-6 break-inside-avoid border border-gray-300 p-4 rounded"><div className="flex justify-between items-center bg-gray-50 p-2 mb-2 border-b border-gray-200"><h3 className="font-bold text-lg m-0">{crit.title}</h3><span className="badge bg-blue-100 text-blue-800">Score: {crit.score}/10</span></div><div className="text-sm mb-3"><MarkdownRenderer content={crit.analysis} resourceMap={resourceMap} /></div><div className="grid grid-cols-2 gap-4"><div className="bg-green-50 p-3 rounded border border-green-100"><b className="text-green-700 block mb-1">Pros</b><ul className="list-disc list-inside text-xs">{crit.pros.map((p,i)=><li key={i}>{p}</li>)}</ul></div><div className="bg-red-50 p-3 rounded border border-red-100"><b className="text-red-700 block mb-1">Cons</b><ul className="list-disc list-inside text-xs">{crit.cons.map((c,i)=><li key={i}>{c}</li>)}</ul></div></div></div>))}</div>
+                                            </div>
+                                        ))}
+                                        <div className="html2pdf__page-break break-inside-avoid">
+                                            <h2 className="text-xl font-bold mb-4 border-b pb-2">References Index</h2>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', fontSize: '10px' }}>
+                                                {resourceMap.map(r => (
+                                                    <div key={r.id} style={{ display: 'flex', gap: '5px' }}>
+                                                        <span style={{ fontWeight: 'bold', color: '#1e3a8a' }}>[{r.id}]</span>
+                                                        <span>{r.name}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <ChatWidget isOpen={isChatOpen} toggleChat={() => setIsChatOpen(!isChatOpen)} messages={messages} onSendMessage={sendMessage} isChatting={isChatting} customQuestion={customQuestion} setCustomQuestion={setCustomQuestion} analysisData={analysisData} resourceMap={resourceMap} />
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
